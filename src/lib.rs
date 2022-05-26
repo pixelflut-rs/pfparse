@@ -1,15 +1,10 @@
 pub mod color;
 
 use nom::branch::alt;
-use nom::bytes::complete::tag;
-use nom::bytes::complete::take;
-use nom::character::complete::char;
-use nom::character::complete::digit1;
-use nom::combinator::opt;
-use nom::combinator::value;
-use nom::combinator::verify;
-use nom::sequence::separated_pair;
-use nom::sequence::tuple;
+use nom::bytes::complete::{tag, take};
+use nom::character::complete::{char, digit1};
+use nom::combinator::{opt, value};
+use nom::sequence::{separated_pair, tuple};
 use nom::IResult;
 
 #[derive(PartialEq, Debug)]
