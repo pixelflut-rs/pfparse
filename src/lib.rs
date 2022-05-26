@@ -3,7 +3,7 @@ pub mod color;
 use nom::branch::alt;
 use nom::bytes::complete::{tag, take};
 use nom::character::complete::{char, digit1};
-use nom::combinator::{opt, value};
+use nom::combinator::{cond, value};
 use nom::sequence::{separated_pair, tuple};
 use nom::IResult;
 
@@ -39,13 +39,26 @@ pub fn parse(input: &str) -> IResult<&str, Command> {
     };
 
     // Further parse the PX command. This can be either a request to get the color at <x, y> or to set a color at <x, y>
-    let (_, ((x, y), c)) = match tuple((coord_parser, color_parser))(rest) {
+    let (_, ((x, y), cp)) = match tuple((coord_parser, color_parser))(rest) {
         Err(err) => return Err(err),
         Ok(r) => r,
     };
 
+    // Return early when we detected a request
+    if cp.0 {
+        return Ok((
+            "",
+            Command::Pixel {
+                is_req: true,
+                x: x.parse().unwrap(),
+                y: y.parse().unwrap(),
+                c: color::BLACK,
+            },
+        ));
+    }
+
     // Parse color
-    let (_, color) = match color::Color::parse(c.1) {
+    let (_, color) = match color::Color::parse(cp.1) {
         Err(err) => return Err(err),
         Ok(c) => c,
     };
@@ -53,7 +66,7 @@ pub fn parse(input: &str) -> IResult<&str, Command> {
     return Ok((
         "",
         Command::Pixel {
-            is_req: c.0,
+            is_req: cp.0,
             x: x.parse().unwrap(),
             y: y.parse().unwrap(),
             c: color,
@@ -62,23 +75,15 @@ pub fn parse(input: &str) -> IResult<&str, Command> {
 }
 
 fn color_parser(input: &str) -> IResult<&str, (bool, &str)> {
-    let (rest, color) = match opt(tuple((tag(" "), take(6usize))))(input) {
+    let (rest, color) = match cond(input.len() == 7, tuple((tag(" "), take(6usize))))(input) {
         Err(err) => return Err(err),
         Ok(r) => r,
     };
 
     // Check if we found other than None. If not it is a request
     let (is_req, color) = match color {
-        Some(color) => {
-            if color.1.len() != 6 {
-                return Err(nom::Err::Failure(nom::error::Error {
-                    code: nom::error::ErrorKind::Verify,
-                    input,
-                }));
-            }
-            (false, color.1)
-        }
-        None => (true, ""),
+        Some(color) => (false, color.1),
+        None => (input.len() == 0, ""),
     };
 
     Ok((rest, (is_req, color)))
