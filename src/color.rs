@@ -40,14 +40,14 @@ impl Color {
 
 impl From<Color> for u32 {
     fn from(color: Color) -> Self {
-        let b: [u8; 4] = [color.a, color.r, color.g, color.b];
+        let b: [u8; 4] = [color.r, color.g, color.b, color.a];
         u32::from_be_bytes(b)
     }
 }
 
 impl From<&Color> for u32 {
     fn from(color: &Color) -> Self {
-        let b: [u8; 4] = [color.a, color.r, color.g, color.b];
+        let b: [u8; 4] = [color.r, color.g, color.b, color.a];
         u32::from_be_bytes(b)
     }
 }
@@ -56,9 +56,9 @@ impl From<u32> for Color {
     fn from(color: u32) -> Self {
         let b = color.to_ne_bytes();
         Color {
-            r: b[2],
-            g: b[1],
-            b: b[0],
+            r: b[3],
+            g: b[2],
+            b: b[1],
             a: 255,
         }
     }
@@ -68,9 +68,9 @@ impl From<&u32> for Color {
     fn from(color: &u32) -> Self {
         let b = color.to_ne_bytes();
         Color {
-            r: b[2],
-            g: b[1],
-            b: b[0],
+            r: b[3],
+            g: b[2],
+            b: b[1],
             a: 255,
         }
     }
