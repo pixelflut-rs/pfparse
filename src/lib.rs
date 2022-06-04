@@ -1,4 +1,5 @@
 pub mod color;
+pub mod error;
 
 use nom::branch::alt;
 use nom::bytes::complete::{tag, take};
@@ -7,7 +8,7 @@ use nom::combinator::{cond, value};
 use nom::sequence::{separated_pair, tuple};
 use nom::IResult;
 
-use std::fmt;
+use error::ParseError;
 
 #[derive(PartialEq, Debug)]
 pub enum Command {
@@ -19,24 +20,6 @@ pub enum Command {
         y: usize,
         c: color::Color,
     },
-}
-
-pub struct ParseError {
-    message: String,
-}
-
-impl fmt::Display for ParseError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.message)
-    }
-}
-
-impl ParseError {
-    pub fn new(err: nom::Err<nom::error::Error<&str>>) -> Self {
-        return ParseError {
-            message: format!("Parse error: {}", err),
-        };
-    }
 }
 
 pub fn parse(input: &str) -> Result<Command, ParseError> {
