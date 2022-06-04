@@ -7,7 +7,7 @@ fn test_basic() {
         Err(err) => panic!("{}", err),
     };
 
-    assert_eq!(r, ("", pfparse::Command::Help));
+    assert_eq!(r, pfparse::Command::Help);
 }
 
 #[test]
@@ -17,5 +17,5 @@ fn test_rest() {
         Err(err) => panic!("{}", err),
     };
 
-    assert_eq!(r, ("", pfparse::Command::Help));
+    assert_eq!(r, pfparse::Command::Help);
 }

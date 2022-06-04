@@ -9,15 +9,12 @@ fn test_get() {
 
     assert_eq!(
         r,
-        (
-            "",
-            pfparse::Command::Pixel {
-                is_req: true,
-                x: 10,
-                y: 10,
-                c: pfparse::color::BLACK,
-            }
-        )
+        pfparse::Command::Pixel {
+            is_req: true,
+            x: 10,
+            y: 10,
+            c: pfparse::color::BLACK,
+        }
     );
 }
 
@@ -38,15 +35,12 @@ fn test_set_white() {
 
     assert_eq!(
         r,
-        (
-            "",
-            pfparse::Command::Pixel {
-                is_req: false,
-                x: 10,
-                y: 10,
-                c: pfparse::color::WHITE,
-            }
-        )
+        pfparse::Command::Pixel {
+            is_req: false,
+            x: 10,
+            y: 10,
+            c: pfparse::color::WHITE,
+        }
     )
 }
 
@@ -59,20 +53,17 @@ fn test_set_cyan() {
 
     assert_eq!(
         r,
-        (
-            "",
-            pfparse::Command::Pixel {
-                is_req: false,
-                x: 10,
-                y: 10,
-                c: pfparse::color::Color {
-                    r: 15,
-                    g: 163,
-                    b: 177,
-                    a: 255
-                },
-            }
-        )
+        pfparse::Command::Pixel {
+            is_req: false,
+            x: 10,
+            y: 10,
+            c: pfparse::color::Color {
+                r: 15,
+                g: 163,
+                b: 177,
+                a: 255
+            },
+        }
     )
 }
 

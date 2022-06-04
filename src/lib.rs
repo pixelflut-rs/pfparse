@@ -7,6 +7,8 @@ use nom::combinator::{cond, value};
 use nom::sequence::{separated_pair, tuple};
 use nom::IResult;
 
+use std::fmt;
+
 #[derive(PartialEq, Debug)]
 pub enum Command {
     Help,
@@ -19,7 +21,25 @@ pub enum Command {
     },
 }
 
-pub fn parse(input: &str) -> IResult<&str, Command> {
+pub struct ParseError {
+    message: String,
+}
+
+impl fmt::Display for ParseError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl ParseError {
+    pub fn new(err: nom::Err<nom::error::Error<&str>>) -> Self {
+        return ParseError {
+            message: format!("Parse error: {}", err),
+        };
+    }
+}
+
+pub fn parse(input: &str) -> Result<Command, ParseError> {
     // First we match the command. An unknown command returns an error
     let (rest, cmd) = match alt((
         value(0, tuple((tag("PX"), tag(" ")))),
@@ -27,51 +47,45 @@ pub fn parse(input: &str) -> IResult<&str, Command> {
         value(2, tag("HELP")),
     ))(input)
     {
-        Err(err) => return Err(err),
+        Err(err) => return Err(ParseError::new(err)),
         Ok(v) => v,
     };
 
     // Immediatly return the SIZE and HELP commands, fall through for PX command
     match cmd {
-        1 => return Ok(("", Command::Size)),
-        2 => return Ok(("", Command::Help)),
+        1 => return Ok(Command::Size),
+        2 => return Ok(Command::Help),
         _ => {}
     };
 
     // Further parse the PX command. This can be either a request to get the color at <x, y> or to set a color at <x, y>
     let (_, ((x, y), cp)) = match tuple((coord_parser, color_parser))(rest) {
-        Err(err) => return Err(err),
+        Err(err) => return Err(ParseError::new(err)),
         Ok(r) => r,
     };
 
     // Return early when we detected a request
     if cp.0 {
-        return Ok((
-            "",
-            Command::Pixel {
-                is_req: true,
-                x: x.parse().unwrap(),
-                y: y.parse().unwrap(),
-                c: color::BLACK,
-            },
-        ));
+        return Ok(Command::Pixel {
+            is_req: true,
+            x: x.parse().unwrap(),
+            y: y.parse().unwrap(),
+            c: color::BLACK,
+        });
     }
 
     // Parse color
     let (_, color) = match color::Color::parse(cp.1) {
-        Err(err) => return Err(err),
+        Err(err) => return Err(ParseError::new(err)),
         Ok(c) => c,
     };
 
-    return Ok((
-        "",
-        Command::Pixel {
-            is_req: cp.0,
-            x: x.parse().unwrap(),
-            y: y.parse().unwrap(),
-            c: color,
-        },
-    ));
+    return Ok(Command::Pixel {
+        is_req: cp.0,
+        x: x.parse().unwrap(),
+        y: y.parse().unwrap(),
+        c: color,
+    });
 }
 
 fn color_parser(input: &str) -> IResult<&str, (bool, &str)> {
