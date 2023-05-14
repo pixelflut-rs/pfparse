@@ -4,8 +4,11 @@ version = "0.0.1"
 edition = "2021"
 
 [features]
+default = ["nom"]
 bytes = []
 nom = []
 
 [dependencies]
+tokio = { version = "1.28", features = ["rt-multi-thread", "net", "io-util", "macros", "time"] }
+thiserror = "1.0.40"
 nom = "7.1.1"
