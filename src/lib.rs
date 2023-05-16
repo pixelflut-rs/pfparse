@@ -16,6 +16,9 @@ pub enum CommandParseError {
 
     #[error("unknown/unsupported command")]
     UnknownCommand,
+
+    #[error("invalid command end (missing newline)")]
+    InvalidCommandEnd,
 }
 
 #[derive(Debug, PartialEq)]
@@ -28,19 +31,30 @@ pub enum Command {
 }
 
 pub async fn parse_command(buffer: &[u8]) -> Result<Vec<Command>, CommandParseError> {
+    // Initialize the state. The parser state will keep track of the state we
+    // are currently in. The state represents a state-machine. The index `i`
+    // keeps track of the current offset in the buffer.
     let mut state = CommandParseState::default();
     let mut i = 0;
 
+    // The parsed commands get stored in this vector.
     let mut commands = Vec::new();
-    let len = buffer.len();
+
+    // Pre-calculate the length of the buffer beforehand. Using this, we avoid
+    // retrieving the length ober and over again in the loop.
+    let len = buffer.len() - 1;
 
     loop {
         state = match state {
             CommandParseState::PreCheck => {
-                if i >= len - 1 {
+                // This is the stopping condition. When we reach this point, we
+                // need to exit the loop as we reached th end of the buffer.
+                if i >= len {
                     break;
                 }
 
+                // Otherwise continue matching the bytes to select the proper
+                // command.
                 CommandParseState::Bytes
             }
             CommandParseState::Bytes => match buffer[i..] {
@@ -92,15 +106,19 @@ pub async fn parse_command(buffer: &[u8]) -> Result<Vec<Command>, CommandParseEr
                 // Skip over color to newline
                 i += 6;
 
+                // Verify the pixel commands ends with a newline
                 if buffer[i] != b'\n' {
-                    return Err(CommandParseError::UnknownCommand);
+                    return Err(CommandParseError::InvalidCommandEnd);
                 }
 
+                // Push command and skip newline
                 commands.push(Command::PixelSet { c: color, x, y });
                 i += 1;
+
                 CommandParseState::PreCheck
             }
             CommandParseState::Offset => {
+                // Read the X coordinate until we encounter a whitespace
                 let (x, o) = read_number_until_whitespace(buffer, i);
                 i = o;
 
