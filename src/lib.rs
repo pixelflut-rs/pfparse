@@ -27,46 +27,60 @@ pub enum Command {
     Offset { x: usize, y: usize },
 }
 
-pub async fn parse_command(buffer: &[u8]) -> Result<Command, CommandParseError> {
+pub async fn parse_command(buffer: &[u8]) -> Result<Vec<Command>, CommandParseError> {
     let mut state = CommandParseState::default();
     let mut i = 0;
+
+    let mut commands = Vec::new();
+    let len = buffer.len();
 
     loop {
         state = match state {
             CommandParseState::PreCheck => {
-                if buffer.len() < 4 {
-                    return Err(CommandParseError::BufTooShort);
+                if i >= len - 1 {
+                    break;
                 }
 
                 CommandParseState::Bytes
             }
-            CommandParseState::Bytes => match buffer {
-                &[b'P', b'X', b' ', ..] => {
+            CommandParseState::Bytes => match buffer[i..] {
+                [b'P', b'X', b' ', ..] => {
                     i += 3;
                     CommandParseState::Pixel
                 }
-                &[b'O', b'F', b'F', b'S', b'E', b'T', b' ', ..] => {
+                [b'O', b'F', b'F', b'S', b'E', b'T', b' ', ..] => {
                     i += 7;
                     CommandParseState::Offset
                 }
-                &[b'H', b'E', b'L', b'P', _] => return Ok(Command::Help),
-                &[b'S', b'I', b'Z', b'E', _] => return Ok(Command::Size),
+                [b'H', b'E', b'L', b'P', b'\n', ..] => {
+                    i += 5;
+                    commands.push(Command::Help);
+                    CommandParseState::PreCheck
+                }
+                [b'S', b'I', b'Z', b'E', b'\n', ..] => {
+                    i += 5;
+                    commands.push(Command::Size);
+                    CommandParseState::PreCheck
+                }
                 _ => return Err(CommandParseError::UnknownCommand),
             },
             CommandParseState::Pixel => {
                 // Look for the X coordinate. We do this by looping over the
                 // bytes until we encounter a whitespace, which separates the
                 // X from the Y coordinate.
-                let (x, o) = read_number_until_whitespace_or_separator(buffer, None, i);
+                let (x, o) = read_number_until_whitespace(buffer, i);
                 i = o;
 
                 // Let's do the same as above for the Y coordinate.
-                let (y, o) = read_number_until_whitespace_or_separator(buffer, Some(b'\n'), i);
+                let (y, o) = read_number_until_whitespace_or_newline(buffer, i);
                 i = o;
 
                 // Exit early if user requested pixel at (X, Y)
                 if buffer[i] == b'\n' {
-                    return Ok(Command::PixelGet { x, y });
+                    commands.push(Command::PixelGet { x, y });
+                    state = CommandParseState::PreCheck;
+                    i += 1;
+                    continue;
                 }
 
                 // Skip whitespace
@@ -75,18 +89,51 @@ pub async fn parse_command(buffer: &[u8]) -> Result<Command, CommandParseError> 
                 let str = unsafe { std::str::from_utf8_unchecked(&buffer[i..i + 6]) };
                 let color = u32::from_str_radix(str, 16).unwrap(); // TODO handle this
 
-                return Ok(Command::PixelSet { c: color, x, y });
+                // Skip over color to newline
+                i += 6;
+
+                if buffer[i] != b'\n' {
+                    return Err(CommandParseError::UnknownCommand);
+                }
+
+                commands.push(Command::PixelSet { c: color, x, y });
+                i += 1;
+                CommandParseState::PreCheck
             }
-            CommandParseState::Offset => todo!(),
+            CommandParseState::Offset => {
+                let (x, o) = read_number_until_whitespace(buffer, i);
+                i = o;
+
+                // Let's do the same as above for the Y coordinate.
+                let (y, o) = read_number_until_whitespace_or_newline(buffer, i);
+                i = o;
+
+                commands.push(Command::Offset { x, y });
+                CommandParseState::PreCheck
+            }
         }
     }
+
+    Ok(commands)
 }
 
-fn read_number_until_whitespace_or_separator(
-    buffer: &[u8],
-    separator: Option<u8>,
-    offset: usize,
-) -> (usize, usize) {
+fn read_number_until_whitespace_or_newline(buffer: &[u8], offset: usize) -> (usize, usize) {
+    let mut i = offset;
+    let mut n = 0;
+
+    loop {
+        if buffer[i] == b' ' || buffer[i] == b'\n' {
+            break;
+        }
+
+        n = 10 * n + (buffer[i] - b'0') as usize;
+        i += 1;
+    }
+
+    (n, i)
+}
+
+fn read_number_until_whitespace(buffer: &[u8], offset: usize) -> (usize, usize) {
     let mut i = offset;
     let mut n = 0;
 
@@ -94,13 +141,6 @@ fn read_number_until_whitespace_or_separator(
         if buffer[i] == b' ' {
             i += 1;
             break;
-        }
-
-        if let Some(separator) = separator {
-            if buffer[i] == separator {
-                i += 1;
-                break;
-            }
         }
 
         n = 10 * n + (buffer[i] - b'0') as usize;
@@ -120,7 +160,7 @@ mod test {
         let input = input.as_bytes();
 
         match parse_command(input).await {
-            Ok(cmd) => assert_eq!(cmd, Command::Help),
+            Ok(cmd) => assert_eq!(cmd[0], Command::Help),
             Err(err) => panic!("{err:?}"),
         }
     }
@@ -131,7 +171,7 @@ mod test {
         let input = input.as_bytes();
 
         match parse_command(input).await {
-            Ok(cmd) => assert_eq!(cmd, Command::Size),
+            Ok(cmd) => assert_eq!(cmd[0], Command::Size),
             Err(err) => panic!("{err:?}"),
         }
     }
@@ -142,7 +182,7 @@ mod test {
         let input = input.as_bytes();
 
         match parse_command(input).await {
-            Ok(cmd) => assert_eq!(cmd, Command::PixelGet { x: 10, y: 10 }),
+            Ok(cmd) => assert_eq!(cmd[0], Command::PixelGet { x: 10, y: 10 }),
             Err(err) => panic!("{err:?}"),
         }
     }
@@ -153,7 +193,7 @@ mod test {
         let input = input.as_bytes();
 
         match parse_command(input).await {
-            Ok(cmd) => assert_eq!(cmd, Command::PixelSet { x: 10, y: 10, c: 0 }),
+            Ok(cmd) => assert_eq!(cmd[0], Command::PixelSet { x: 10, y: 10, c: 0 }),
             Err(err) => panic!("{err:?}"),
         }
     }
@@ -164,7 +204,69 @@ mod test {
         let input = input.as_bytes();
 
         match parse_command(input).await {
-            Ok(cmd) => assert_eq!(cmd, Command::PixelSet { x: 10, y: 10, c: 0 }),
+            Ok(cmd) => assert_eq!(cmd[0], Command::Offset { x: 10, y: 10 }),
+            Err(err) => panic!("{err:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn parse_multiple_simple_commands() {
+        let input = "HELP\nSIZE\nHELP\n";
+        let input = input.as_bytes();
+
+        match parse_command(input).await {
+            Ok(cmds) => {
+                assert_eq!(cmds.len(), 3);
+                assert_eq!(cmds[0], Command::Help);
+                assert_eq!(cmds[1], Command::Size);
+                assert_eq!(cmds[2], Command::Help);
+            }
+            Err(err) => panic!("{err:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn parse_multiple_pixel_get_commands() {
+        let input = "PX 10 10\nPX 20 20\n";
+        let input = input.as_bytes();
+
+        match parse_command(input).await {
+            Ok(cmds) => {
+                assert_eq!(cmds.len(), 2);
+                assert_eq!(cmds[0], Command::PixelGet { x: 10, y: 10 });
+                assert_eq!(cmds[1], Command::PixelGet { x: 20, y: 20 });
+            }
+            Err(err) => panic!("{err:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn parse_multiple_pixel_set_commands() {
+        let input = "PX 10 10 000000\nPX 20 20 000000\n";
+        let input = input.as_bytes();
+
+        match parse_command(input).await {
+            Ok(cmds) => {
+                assert_eq!(cmds.len(), 2);
+                assert_eq!(cmds[0], Command::PixelSet { x: 10, y: 10, c: 0 });
+                assert_eq!(cmds[1], Command::PixelSet { x: 20, y: 20, c: 0 });
+            }
+            Err(err) => panic!("{err:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn parse_multiple_pixel_commands() {
+        let input = "PX 10 10\nPX 20 20 000000\nPX 30 30\n";
+        let input = input.as_bytes();
+
+        match parse_command(input).await {
+            Ok(cmds) => {
+                assert_eq!(cmds.len(), 3);
+                assert_eq!(cmds[0], Command::PixelGet { x: 10, y: 10 });
+                assert_eq!(cmds[1], Command::PixelSet { x: 20, y: 20, c: 0 });
+                assert_eq!(cmds[2], Command::PixelGet { x: 30, y: 30 });
+            }
             Err(err) => panic!("{err:?}"),
         }
     }
