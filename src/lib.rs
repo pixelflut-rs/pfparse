@@ -4,17 +4,13 @@ use thiserror::Error;
 pub enum CommandParseState {
     #[default]
     PreCheck,
-    CommandBytes,
-    Selection,
+    Bytes,
     Pixel,
     Offset,
 }
 
 #[derive(Debug, Error)]
 pub enum CommandParseError {
-    #[error("invalid byte")]
-    InvalidByte,
-
     #[error("buffer too short")]
     BufTooShort,
 
@@ -42,62 +38,31 @@ pub async fn parse_command(buffer: &[u8]) -> Result<Command, CommandParseError> 
                     return Err(CommandParseError::BufTooShort);
                 }
 
-                CommandParseState::CommandBytes
+                CommandParseState::Bytes
             }
-            CommandParseState::CommandBytes => {
-                match buffer[i] {
-                    b'P' | b'X' | b'S' | b'I' | b'Z' | b'E' | b'H' | b'L' | b'O' | b'F' | b'T' => {
-                        // We encountered a valid byte. This means we increase
-                        // our index by one and continue the loop without
-                        // updating the parser state.
-                        i += 1;
-                        continue;
-                    }
-                    b' ' | b'\n' => {
-                        // We encountered a newline. This
-                        // indicates the command is finished and we now can
-                        // either select the command in case of SIZE and HELP
-                        // or continue parsing bytes in case of PX and OFFSET.
-                        CommandParseState::Selection
-                    }
-                    _ => return Err(CommandParseError::InvalidByte),
+            CommandParseState::Bytes => match buffer {
+                &[b'P', b'X', b' ', ..] => {
+                    i += 3;
+                    CommandParseState::Pixel
                 }
-            }
-            CommandParseState::Selection => {
-                // Select proper command
-                match buffer.split_at(i) {
-                    (&[b'P', b'X'], _) => CommandParseState::Pixel,
-                    (&[b'O', b'F', b'F', b'S', b'E', b'T'], _) => CommandParseState::Offset,
-                    (&[b'H', b'E', b'L', b'P'], _) => return Ok(Command::Help),
-                    (&[b'S', b'I', b'Z', b'E'], _) => return Ok(Command::Size),
-                    _ => return Err(CommandParseError::UnknownCommand),
+                &[b'O', b'F', b'F', b'S', b'E', b'T', b' ', ..] => {
+                    i += 7;
+                    CommandParseState::Offset
                 }
-            }
+                &[b'H', b'E', b'L', b'P', _] => return Ok(Command::Help),
+                &[b'S', b'I', b'Z', b'E', _] => return Ok(Command::Size),
+                _ => return Err(CommandParseError::UnknownCommand),
+            },
             CommandParseState::Pixel => {
                 // Look for the X coordinate. We do this by looping over the
                 // bytes until we encounter a whitespace, which separates the
                 // X from the Y coordinate.
-                i += 1;
-
-                let mut x = 0;
-                loop {
-                    if buffer[i] == b' ' {
-                        i += 1;
-                        break;
-                    }
-                    x = 10 * x + (buffer[i] - b'0') as usize;
-                    i += 1;
-                }
+                let (x, o) = read_number_until_whitespace_or_separator(buffer, None, i);
+                i = o;
 
                 // Let's do the same as above for the Y coordinate.
-                let mut y = 0;
-                loop {
-                    if buffer[i] == b' ' || buffer[i] == b'\n' {
-                        break;
-                    }
-                    y = 10 * y + (buffer[i] - b'0') as usize;
-                    i += 1;
-                }
+                let (y, o) = read_number_until_whitespace_or_separator(buffer, Some(b'\n'), i);
+                i = o;
 
                 // Exit early if user requested pixel at (X, Y)
                 if buffer[i] == b'\n' {
@@ -115,6 +80,34 @@ pub async fn parse_command(buffer: &[u8]) -> Result<Command, CommandParseError> 
             CommandParseState::Offset => todo!(),
         }
     }
+}
+
+fn read_number_until_whitespace_or_separator(
+    buffer: &[u8],
+    separator: Option<u8>,
+    offset: usize,
+) -> (usize, usize) {
+    let mut i = offset;
+    let mut n = 0;
+
+    loop {
+        if buffer[i] == b' ' {
+            i += 1;
+            break;
+        }
+
+        if let Some(separator) = separator {
+            if buffer[i] == separator {
+                i += 1;
+                break;
+            }
+        }
+
+        n = 10 * n + (buffer[i] - b'0') as usize;
+        i += 1;
+    }
+
+    (n, i)
 }
 
 #[cfg(test)]
@@ -157,6 +150,17 @@ mod test {
     #[tokio::test]
     async fn parse_pixel_set_command() {
         let input = "PX 10 10 000000\n";
+        let input = input.as_bytes();
+
+        match parse_command(input).await {
+            Ok(cmd) => assert_eq!(cmd, Command::PixelSet { x: 10, y: 10, c: 0 }),
+            Err(err) => panic!("{err:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn parse_offset_command() {
+        let input = "OFFSET 10 10\n";
         let input = input.as_bytes();
 
         match parse_command(input).await {
